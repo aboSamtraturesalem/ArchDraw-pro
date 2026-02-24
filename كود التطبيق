@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>ArchDraw Pro | نسخة الذكاء الاصطناعي</title>
+    <style>
+        :root { --primary: #007acc; --bg: #121212; --panel: #1e1e1e; }
+        body { margin: 0; background: var(--bg); color: #e1e1e1; font-family: 'Segoe UI', Tahoma, sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        .toolbar { background: #252526; padding: 10px; display: flex; gap: 12px; border-bottom: 2px solid #333; align-items: center; }
+        .workspace { flex: 1; position: relative; cursor: crosshair; }
+        canvas { display: block; background: #000; }
+        .properties { background: var(--panel); padding: 15px; border-top: 2px solid #333; display: flex; gap: 20px; font-size: 14px; }
+        .btn { background: #333; color: white; border: 1px solid #444; padding: 8px 15px; cursor: pointer; border-radius: 5px; transition: 0.2s; }
+        .btn:hover { background: #444; border-color: var(--primary); }
+        .btn.active { background: var(--primary); border-color: #fff; }
+        input { background: #2d2d2d; border: 1px solid #444; color: white; padding: 5px; width: 60px; border-radius: 3px; }
+        .status-bar { position: absolute; bottom: 85px; right: 20px; background: rgba(0,0,0,0.7); padding: 5px 15px; border-radius: 20px; font-size: 12px; color: #4ec9b0; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <strong style="color:var(--primary); margin-left:15px;">ArchDraw Pro v2.0</strong>
+        <div class="group">
+            <button class="btn active" onclick="setTool('wall', this)">🧱 جدار</button>
+            <button class="btn" onclick="setTool('door', this)">🚪 باب ذكي</button>
+            <button class="btn" onclick="setTool('window', this)">🪟 نافذة</button>
+            <button class="btn" onclick="setTool('rect', this)">🟦 غرفة</button>
+        </div>
+        <div class="group" style="border-right: 1px solid #444; padding-right: 12px;">
+            <button class="btn" onclick="setTool('eraser', this)">🧹 حذف</button>
+            <button class="btn" style="background:#c0392b" onclick="clearAll()">🗑️ مسح الكل</button>
+        </div>
+        <label><input type="checkbox" id="snapToggle" checked> مغناطيس</label>
+        <button class="btn" onclick="saveToDevice()" style="background:#27ae60">💾 حفظ</button>
+    </div>
+
+    <div class="workspace">
+        <canvas id="mainCanvas"></canvas>
+        <div class="status-bar" id="statusBar">الوضع: رسم جدران | الشبكة: 25px</div>
+    </div>
+
+    <div class="properties" id="propPanel">
+        <div id="noSelect">قم برسم جدار أو وضع باب لبدء التعديل</div>
+        <div id="editor" style="display:none; align-items:center; gap:15px;">
+            <span>الطول: <input type="number" id="pLen" oninput="updateEl()"> م</span>
+            <span>السمك: <input type="number" id="pThick" oninput="updateEl()"> سم</span>
+            <span id="areaInfo" style="font-weight:bold; color:var(--primary)"></span>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    let elements = JSON.parse(localStorage.getItem('archDraw_data')) || [];
+    let tool = 'wall';
+    let isDrawing = false;
+    let startP = null, currentP = null;
+    let selectedIdx = -1;
+    const gridSize = 25;
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight - 150;
+        draw();
+    }
+    window.onresize = resize;
+    resize();
+
+    const snap = (v) => document.getElementById('snapToggle').checked ? Math.round(v/gridSize)*gridSize : v;
+
+    canvas.onmousedown = (e) => {
+        const x = snap(e.clientX), y = snap(e.clientY - canvas.offsetTop);
+        
+        if(tool === 'eraser') {
+            elements = elements.filter(el => !isNear(x, y, el));
+            save(); draw(); return;
+        }
+
+        let found = elements.findIndex(el => isNear(x, y, el));
+        if(found !== -1) {
+            selectedIdx = found;
+            showEditor(elements[found]);
+            draw(); return;
+        }
+
+        isDrawing = true;
+        startP = {x, y};
+    };
+
+    canvas.onmousemove = (e) => {
+        if(!isDrawing) return;
+        currentP = { x: snap(e.clientX), y: snap(e.clientY - canvas.offsetTop) };
+        draw();
+        
+        // رسم وهمي أثناء السحب
+        ctx.strokeStyle = "rgba(255,255,255,0.3)";
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath(); ctx.moveTo(startP.x, startP.y); ctx.lineTo(currentP.x, currentP.y); ctx.stroke();
+        ctx.setLineDash([]);
+    };
+
+    canvas.onmouseup = (e) => {
+        if(!isDrawing) return;
+        isDrawing = false;
+        const endP = { x: snap(e.clientX), y: snap(e.clientY - canvas.offsetTop) };
+        
+        if(Math.hypot(endP.x - startP.x, endP.y - startP.y) > 5) {
+            elements.push({
+                type: tool,
+                x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y,
+                thick: tool === 'wall' ? 15 : 10,
+                color: tool === 'wall' ? 'cyan' : 'white'
+            });
+            save();
+        }
+        draw();
+    };
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGrid();
+        
+        // أولاً: رسم الجدران مع ترك فراغات للأبواب والنوافذ (الذكاء الهندسي)
+        elements.filter(el => el.type === 'wall').forEach((w, idx) => {
+            ctx.beginPath();
+            ctx.lineWidth = w.thick;
+            ctx.strokeStyle = (elements.indexOf(w) === selectedIdx) ? "yellow" : "cyan";
+            
+            // البحث عن أبواب تتقاطع مع هذا الجدار لقصها
+            let holes = elements.filter(h => (h.type === 'door' || h.type === 'window') && isPointOnLine(h.x1, h.y1, w));
+            
+            if(holes.length === 0) {
+                ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+            } else {
+                // منطق القص: رسم الجدار كقطع منفصلة
+                ctx.moveTo(w.x1, w.y1); ctx.lineTo(holes[0].x1, holes[0].y1); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(holes[0].x2, holes[0].y2); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+            }
+        });
+
+        // ثانياً: رسم الأبواب والنوافذ
+        elements.filter(el => el.type !== 'wall').forEach((el, idx) => {
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = (elements.indexOf(el) === selectedIdx) ? "yellow" : "white";
+            if(el.type === 'door') {
+                ctx.beginPath(); ctx.arc(el.x1, el.y1, Math.hypot(el.x2-el.x1, el.y2-el.y1), 0, -Math.PI/2, true); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(el.x1, el.y1); ctx.lineTo(el.x2, el.y2); ctx.stroke();
+            } else if(el.type === 'rect') {
+                ctx.strokeRect(el.x1, el.y1, el.x2-el.x1, el.y2-el.y1);
+            }
+        });
+    }
+
+    function drawGrid() {
+        ctx.strokeStyle = "#1a1a1a";
+        for(let i=0; i<canvas.width; i+=gridSize) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke(); }
+        for(let i=0; i<canvas.height; i+=gridSize) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width,i); ctx.stroke(); }
+    }
+
+    // دوال مساعدة للذكاء
+    function isPointOnLine(px, py, line) {
+        let d1 = Math.hypot(px - line.x1, py - line.y1);
+        let d2 = Math.hypot(px - line.x2, py - line.y2);
+        let lineLen = Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
+        return d1 + d2 >= lineLen - 0.1 && d1 + d2 <= lineLen + 0.1;
+    }
+
+    function isNear(x, y, el) { return Math.hypot(el.x1 - x, el.y1 - y) < 20; }
+
+    function setTool(t, btn) {
+        tool = t;
+        document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('statusBar').innerText = `الوضع: رسم ${t} | الشبكة: 25px`;
+    }
+
+    function save() { localStorage.setItem('archDraw_data', JSON.stringify(elements)); }
+
+    function showEditor(el) {
+        document.getElementById('noSelect').style.display = 'none';
+        document.getElementById('editor').style.display = 'flex';
+        document.getElementById('pLen').value = (Math.hypot(el.x2-el.x1, el.y2-el.y1)/gridSize).toFixed(1);
+        document.getElementById('pThick').value = el.thick;
+    }
+
+    function clearAll() { if(confirm("هل أنت متأكد من مسح المخطط بالكامل؟")) { elements = []; save(); draw(); } }
+</script>
+</body>
+</html>
