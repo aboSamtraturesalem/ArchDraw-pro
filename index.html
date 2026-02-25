@@ -1,1 +1,86 @@
 
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>ArchDraw Pro | الذكاء المعماري</title>
+    <style>
+        :root { --primary: #007acc; --bg: #121212; }
+        body { margin: 0; background: var(--bg); color: #e1e1e1; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        .toolbar { background: #252526; padding: 10px; display: flex; gap: 10px; border-bottom: 2px solid #333; justify-content: center; }
+        .workspace { flex: 1; position: relative; background: #000; }
+        canvas { display: block; cursor: crosshair; }
+        .btn { background: #333; color: white; border: 1px solid #444; padding: 8px 12px; cursor: pointer; border-radius: 5px; }
+        .btn.active { background: var(--primary); }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button class="btn active" onclick="setTool('wall', this)">🧱 جدار</button>
+        <button class="btn" onclick="setTool('door', this)">🚪 باب</button>
+        <button class="btn" onclick="setTool('rect', this)">🟦 غرفة</button>
+        <button class="btn" style="background:#c0392b" onclick="clearAll()">🗑️ مسح</button>
+    </div>
+    <div class="workspace"><canvas id="mainCanvas"></canvas></div>
+
+<script>
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    let elements = JSON.parse(localStorage.getItem('archData')) || [];
+    let tool = 'wall';
+    let isDrawing = false, startP = null;
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight - 60;
+        draw();
+    }
+    window.onresize = resize;
+    resize();
+
+    canvas.onmousedown = (e) => {
+        isDrawing = true;
+        startP = { x: Math.round(e.clientX/25)*25, y: Math.round((e.clientY-60)/25)*25 };
+    };
+
+    canvas.onmousemove = (e) => {
+        if(!isDrawing) return;
+        draw();
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.beginPath(); ctx.moveTo(startP.x, startP.y);
+        ctx.lineTo(Math.round(e.clientX/25)*25, Math.round((e.clientY-60)/25)*25); ctx.stroke();
+    };
+
+    canvas.onmouseup = (e) => {
+        if(!isDrawing) return;
+        isDrawing = false;
+        const endP = { x: Math.round(e.clientX/25)*25, y: Math.round((e.clientY-60)/25)*25 };
+        elements.push({type: tool, x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y});
+        localStorage.setItem('archData', JSON.stringify(elements));
+        draw();
+    };
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        elements.forEach(el => {
+            ctx.lineWidth = 15; ctx.strokeStyle = el.type === 'wall' ? 'cyan' : 'white';
+            ctx.beginPath();
+            if(el.type === 'door') {
+                ctx.arc(el.x1, el.y1, Math.hypot(el.x2-el.x1, el.y2-el.y1), 0, -Math.PI/2, true);
+            } else {
+                ctx.moveTo(el.x1, el.y1); ctx.lineTo(el.x2, el.y2);
+            }
+            ctx.stroke();
+        });
+    }
+
+    function setTool(t, b) {
+        tool = t;
+        document.querySelectorAll('.btn').forEach(btn => btn.classList.remove('active'));
+        b.classList.add('active');
+    }
+
+    function clearAll() { elements = []; localStorage.removeItem('archData'); draw(); }
+</script>
+</body>
+</html>
