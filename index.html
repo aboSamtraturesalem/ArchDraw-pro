@@ -2,140 +2,168 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ArchDraw Pro | النسخة المستقرة</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArchDraw Pro | نظام القياس الذكي</title>
     <style>
-        :root { --primary: #007acc; --bg: #121212; }
+        :root { --primary: #007acc; --bg: #121212; --panel: #252526; }
+        * { box-sizing: border-box; }
         body { margin: 0; background: var(--bg); color: #e1e1e1; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        .toolbar { background: #252526; padding: 10px; display: flex; gap: 8px; border-bottom: 2px solid #333; justify-content: center; flex-wrap: wrap; }
-        .workspace { flex: 1; position: relative; background: #000; touch-action: none; }
-        canvas { display: block; }
-        .btn { background: #333; color: white; border: 1px solid #444; padding: 10px 14px; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        .toolbar { background: var(--panel); padding: 12px; display: flex; gap: 10px; border-bottom: 2px solid #333; justify-content: center; z-index: 10; flex-wrap: wrap; }
+        .workspace { flex: 1; position: relative; background: #000; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; }
+        .btn { background: #333; color: white; border: 1px solid #444; padding: 10px 16px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: 0.2s; user-select: none; }
+        .btn:hover { background: #444; border-color: var(--primary); }
         .btn.active { background: var(--primary); border-color: #fff; }
+        .info-bar { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 4px; font-size: 12px; pointer-events: none; }
     </style>
 </head>
 <body>
-
     <div class="toolbar" id="toolbar">
-        <button class="btn active" onclick="setTool('wall', this)">🧱 جدار</button>
-        <button class="btn" onclick="setTool('door', this)">🚪 باب</button>
-        <button class="btn" onclick="setTool('rect', this)">🟦 غرفة</button>
-        <button class="btn" style="background:#c0392b" onclick="clearAll()">🗑️ مسح</button>
+        <button class="btn active" data-tool="wall">🧱 جدار</button>
+        <button class="btn" data-tool="door">🚪 باب</button>
+        <button class="btn" data-tool="rect">🟦 غرفة</button>
+        <button class="btn" id="clearBtn" style="background:#c0392b">🗑️ مسح</button>
     </div>
-
-    <div class="workspace" id="canvasContainer">
+    <div class="workspace">
         <canvas id="mainCanvas"></canvas>
+        <div class="info-bar">المقياس: كل مربع = 1 متر</div>
     </div>
+    <script>
+        (function() {
+            const canvas = document.getElementById('mainCanvas');
+            const ctx = canvas.getContext('2d');
+            const toolbar = document.getElementById('toolbar');
+            
+            let elements = [];
+            try { elements = JSON.parse(localStorage.getItem('archData')) || []; } catch (e) { elements = []; }
+            
+            let tool = 'wall';
+            let isDrawing = false;
+            let startP = null;
+            const gridSize = 25; // كل 25 بكسل = 1 متر
 
-<script>
-    const canvas = document.getElementById('mainCanvas');
-    const ctx = canvas.getContext('2d');
-    const toolbar = document.getElementById('toolbar');
-    
-    let elements = JSON.parse(localStorage.getItem('archData')) || [];
-    let tool = 'wall';
-    let isDrawing = false;
-    let startP = null;
-    const gridSize = 25;
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight - toolbar.offsetHeight;
+                draw();
+            }
 
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight - toolbar.offsetHeight;
-        draw();
-    }
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: Math.round((clientX - rect.left) / gridSize) * gridSize,
+                    y: Math.round((clientY - rect.top) / gridSize) * gridSize
+                };
+            }
 
-    // تصحيح حساب الإحداثيات (المشكلة رقم 2 و 5)
-    function getPos(e) {
-        const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return {
-            x: Math.round((clientX - rect.left) / gridSize) * gridSize,
-            y: Math.round((clientY - rect.top) / gridSize) * gridSize
-        };
-    }
+            // دالة حساب المسافة بالمتر
+            function getLength(x1, y1, x2, y2) {
+                let pxDist = Math.hypot(x2 - x1, y2 - y1);
+                return (pxDist / gridSize).toFixed(2); // تقريب لرقمين عشريين
+            }
 
-    // تصحيح أحداث الماوس واللمس (المشكلة رقم 1 و 4)
-    function startAction(e) {
-        isDrawing = true;
-        startP = getPos(e);
-    }
+            function renderElement(el) {
+                ctx.save();
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = el.type === 'wall' ? 'cyan' : 'white';
+                ctx.fillStyle = "yellow"; // لون نص القياس
+                ctx.font = "14px Arial";
+                
+                ctx.beginPath();
+                if (el.type === 'door') {
+                    const radius = Math.hypot(el.x2 - el.x1, el.y2 - el.y1);
+                    ctx.arc(el.x1, el.y1, radius, 0, -Math.PI / 2, true);
+                } else if (el.type === 'rect') {
+                    ctx.strokeRect(el.x1, el.y1, el.x2 - el.x1, el.y2 - el.y1);
+                } else {
+                    ctx.moveTo(el.x1, el.y1);
+                    ctx.lineTo(el.x2, el.y2);
+                }
+                ctx.stroke();
 
-    function moveAction(e) {
-        if (!isDrawing) return;
-        const currentP = getPos(e);
-        draw();
-        
-        // معاينة الرسم قبل الحفظ
-        ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
-        renderElement({ type: tool, x1: startP.x, y1: startP.y, x2: currentP.x, y2: currentP.y });
-        ctx.setLineDash([]);
-    }
+                // إضافة كتابة القياس فوق العنصر
+                if (el.type !== 'door') {
+                    let midX = (el.x1 + el.x2) / 2;
+                    let midY = (el.y1 + el.y2) / 2;
+                    let dist = getLength(el.x1, el.y1, el.x2, el.y2);
+                    ctx.fillText(dist + " م", midX + 5, midY - 5);
+                }
+                ctx.restore();
+            }
 
-    function endAction(e) {
-        if (!isDrawing) return;
-        isDrawing = false;
-        const endP = getPos(e || {clientX: startP.x, clientY: startP.y}); // معالجة e إذا كان فارغاً
-        
-        if (Math.hypot(endP.x - startP.x, endP.y - startP.y) > 5) {
-            elements.push({ type: tool, x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y });
-            localStorage.setItem('archData', JSON.stringify(elements));
-        }
-        draw();
-    }
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.save();
+                ctx.strokeStyle = "#1a1a1a";
+                for(let i = 0; i < canvas.width; i += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+                }
+                for(let j = 0; j < canvas.height; j += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(canvas.width, j); ctx.stroke();
+                }
+                ctx.restore();
+                elements.forEach(renderElement);
+            }
 
-    // إضافة المستمعات بشكل صحيح
-    canvas.addEventListener('mousedown', startAction);
-    window.addEventListener('mousemove', moveAction);
-    window.addEventListener('mouseup', endAction);
-    
-    // دعم شاشات اللمس للهواتف
-    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startAction(e); }, {passive: false});
-    window.addEventListener('touchmove', (e) => { moveAction(e); }, {passive: false});
-    window.addEventListener('touchend', (e) => { endAction(e); }, {passive: false});
+            canvas.addEventListener('mousedown', (e) => { isDrawing = true; startP = getPos(e); });
+            canvas.addEventListener('mousemove', (e) => {
+                if (!isDrawing) return;
+                const currentP = getPos(e);
+                draw();
+                ctx.save();
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.beginPath();
+                ctx.moveTo(startP.x, startP.y);
+                ctx.lineTo(currentP.x, currentP.y);
+                ctx.stroke();
+                // عرض القياس الحي أثناء السحب
+                ctx.fillStyle = "white";
+                ctx.fillText(getLength(startP.x, startP.y, currentP.x, currentP.y) + " م", currentP.x + 10, currentP.y - 10);
+                ctx.restore();
+            });
 
-    // دالة رسم موحدة لمنع التكرار (المشكلة رقم 3 و 6)
-    function renderElement(el) {
-        ctx.lineWidth = 10;
-        ctx.strokeStyle = el.type === 'wall' ? '#00ffff' : '#ffffff';
-        ctx.beginPath();
-        if (el.type === 'door') {
-            const radius = Math.hypot(el.x2 - el.x1, el.y2 - el.y1);
-            ctx.arc(el.x1, el.y1, radius, 0, -Math.PI / 2, true);
-        } else if (el.type === 'rect') {
-            ctx.strokeRect(el.x1, el.y1, el.x2 - el.x1, el.y2 - el.y1);
-        } else {
-            ctx.moveTo(el.x1, el.y1);
-            ctx.lineTo(el.x2, el.y2);
-        }
-        ctx.stroke();
-    }
+            canvas.addEventListener('mouseup', (e) => {
+                if (!isDrawing) return;
+                isDrawing = false;
+                const endP = getPos(e);
+                if (Math.hypot(endP.x - startP.x, endP.y - startP.y) > 5) {
+                    elements.push({ type: tool, x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y });
+                    localStorage.setItem('archData', JSON.stringify(elements));
+                }
+                draw();
+            });
 
-    function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // رسم الشبكة
-        ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
-        for(let i=0; i<canvas.width; i+=gridSize) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke(); }
-        for(let j=0; j<canvas.height; j+=gridSize) { ctx.beginPath(); ctx.moveTo(0,j); ctx.lineTo(canvas.width,j); ctx.stroke(); }
-        
-        elements.forEach(renderElement);
-    }
+            // دعم اللمس (تعديل طفيف لضمان الاستجابة)
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); isDrawing = true; startP = getPos(e); });
+            canvas.addEventListener('touchmove', (e) => {
+                 if (!isDrawing) return; e.preventDefault();
+                 const currentP = getPos(e);
+                 draw();
+                 ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = "white";
+                 ctx.beginPath(); ctx.moveTo(startP.x, startP.y); ctx.lineTo(currentP.x, currentP.y); ctx.stroke();
+                 ctx.fillText(getLength(startP.x, startP.y, currentP.x, currentP.y) + " م", currentP.x + 10, currentP.y - 10);
+                 ctx.restore();
+            });
+            canvas.addEventListener('touchend', (e) => { isDrawing = false; draw(); });
 
-    function setTool(t, b) {
-        tool = t;
-        document.querySelectorAll('.btn').forEach(btn => btn.classList.remove('active'));
-        b.classList.add('active');
-    }
+            document.querySelectorAll('.btn[data-tool]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    tool = btn.dataset.tool;
+                });
+            });
 
-    function clearAll() {
-        if(confirm("هل تريد مسح المخطط بالكامل؟")) {
-            elements = []; localStorage.removeItem('archData'); draw();
-        }
-    }
+            document.getElementById('clearBtn').addEventListener('click', () => {
+                if (confirm("مسح المخطط؟")) { elements = []; localStorage.removeItem('archData'); draw(); }
+            });
 
-    window.addEventListener('resize', resize);
-    resize();
-</script>
+            window.addEventListener('resize', resize);
+            resize();
+        })();
+    </script>
 </body>
 </html>
