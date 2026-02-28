@@ -15,6 +15,11 @@
         .btn:hover { background: #444; border-color: var(--primary); }
         .btn.active { background: var(--primary); border-color: #fff; }
         .info-bar { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 4px; font-size: 12px; pointer-events: none; }
+        #start-message {
+            position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+            background:rgba(0,0,0,0.8);color:#fff;padding:16px 32px;
+            border-radius:10px;font-size:1.5em;z-index:20;text-align:center;
+        }
     </style>
 </head>
 <body>
@@ -26,6 +31,9 @@
     </div>
     <div class="workspace">
         <canvas id="mainCanvas"></canvas>
+        <div id="start-message">
+            ابدأ بالرسم
+        </div>
         <div class="info-bar">المقياس: كل مربع = 1 متر</div>
     </div>
     <script>
@@ -33,14 +41,20 @@
             const canvas = document.getElementById('mainCanvas');
             const ctx = canvas.getContext('2d');
             const toolbar = document.getElementById('toolbar');
-            
             let elements = [];
             try { elements = JSON.parse(localStorage.getItem('archData')) || []; } catch (e) { elements = []; }
-            
             let tool = 'wall';
             let isDrawing = false;
             let startP = null;
             const gridSize = 25; // كل 25 بكسل = 1 متر
+
+            // إخفاء رسالة البداية إذا كان هناك رسم سابق
+            window.addEventListener('DOMContentLoaded', function() {
+                if (elements.length > 0) {
+                    const msg = document.getElementById('start-message');
+                    if (msg) msg.style.display = 'none';
+                }
+            });
 
             function resize() {
                 canvas.width = window.innerWidth;
@@ -132,22 +146,30 @@
                 if (Math.hypot(endP.x - startP.x, endP.y - startP.y) > 5) {
                     elements.push({ type: tool, x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y });
                     localStorage.setItem('archData', JSON.stringify(elements));
+                    // إخفاء رسالة البداية
+                    const msg = document.getElementById('start-message');
+                    if (msg) msg.style.display = 'none';
                 }
                 draw();
             });
 
-            // دعم اللمس (تعديل طفيف لضمان الاستجابة)
+            // دعم اللمس
             canvas.addEventListener('touchstart', (e) => { e.preventDefault(); isDrawing = true; startP = getPos(e); });
             canvas.addEventListener('touchmove', (e) => {
-                 if (!isDrawing) return; e.preventDefault();
-                 const currentP = getPos(e);
-                 draw();
-                 ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = "white";
-                 ctx.beginPath(); ctx.moveTo(startP.x, startP.y); ctx.lineTo(currentP.x, currentP.y); ctx.stroke();
-                 ctx.fillText(getLength(startP.x, startP.y, currentP.x, currentP.y) + " م", currentP.x + 10, currentP.y - 10);
-                 ctx.restore();
+                if (!isDrawing) return; e.preventDefault();
+                const currentP = getPos(e);
+                draw();
+                ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = "white";
+                ctx.beginPath(); ctx.moveTo(startP.x, startP.y); ctx.lineTo(currentP.x, currentP.y); ctx.stroke();
+                ctx.fillText(getLength(startP.x, startP.y, currentP.x, currentP.y) + " م", currentP.x + 10, currentP.y - 10);
+                ctx.restore();
             });
-            canvas.addEventListener('touchend', (e) => { isDrawing = false; draw(); });
+            canvas.addEventListener('touchend', (e) => {
+                isDrawing = false; draw();
+                // إخفاء رسالة البداية
+                const msg = document.getElementById('start-message');
+                if (msg) msg.style.display = 'none';
+            });
 
             document.querySelectorAll('.btn[data-tool]').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -158,7 +180,11 @@
             });
 
             document.getElementById('clearBtn').addEventListener('click', () => {
-                if (confirm("مسح المخطط؟")) { elements = []; localStorage.removeItem('archData'); draw(); }
+                if (confirm("مسح المخطط؟")) { elements = []; localStorage.removeItem('archData'); draw();
+                    // عند المسح، تظهر رسالة "ابدأ بالرسم" مرة أخرى
+                    const msg = document.getElementById('start-message');
+                    if (msg) msg.style.display = '';
+                }
             });
 
             window.addEventListener('resize', resize);
