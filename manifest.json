@@ -1,22 +1,486 @@
-{
-  "name": "ArchDraw Pro",
-  "short_name": "ArchDraw",
-  "description": "تطبيق معماري متكامل لرسم الجدران الذكية وحساب المساحات مع نظام القياس الذكي",
-  "start_url": "/ArchDraw-pro/",
-  "display": "fullscreen",
-  "background_color": "#121212",
-  "theme_color": "#007acc",
-  "orientation": "portrait",
-  "icons": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
-}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ArchDraw Pro | الإصدار الذهبي</title>
+    <!-- ربط ملف manifest (الأيقونات والاسم) -->
+    <link rel="manifest" href="/ArchDraw-Pro/manifest.json">
+    <style>
+        :root {
+            --primary: #007acc;
+            --bg: #0a0a0a;
+            --panel: #1e1e1e;
+            --text: #f0f0f0;
+        }
+        * {
+            box-sizing: border-box;
+            touch-action: none;
+            user-select: none;
+        }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+            display: flex;
+            height: 100vh;
+        }
+
+        /* القائمة الجانبية */
+        .sidebar {
+            width: 260px;
+            background: #1a1a1a;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            border-left: 1px solid #333;
+            box-shadow: 4px 0 15px rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+        .sidebar h2 {
+            color: var(--primary);
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 600;
+            border-bottom: 2px solid #007acc;
+            padding-bottom: 8px;
+        }
+        .new-project {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .new-project:hover {
+            background: #005f9e;
+        }
+        .projects-list h3 {
+            color: #888;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .projects-list ul {
+            list-style: none;
+            padding: 0;
+        }
+        .projects-list li {
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .projects-list li:hover {
+            background: #333;
+        }
+        .projects-list li.active {
+            background: #2a2a2a;
+            border-right: 3px solid var(--primary);
+        }
+
+        /* منطقة العمل */
+        .workspace {
+            flex: 1;
+            position: relative;
+            background: #000;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* شريط الأدوات العلوي */
+        .top-toolbar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30,30,30,0.9);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 50px;
+            border: 1px solid #444;
+            display: flex;
+            gap: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            z-index: 200;
+        }
+        .btn-tool {
+            background: transparent;
+            border: none;
+            color: #ccc;
+            width: 48px;
+            height: 48px;
+            border-radius: 40px;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-tool:hover {
+            background: #3a3a3f;
+            color: white;
+        }
+        .btn-tool.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 0 10px #007acc;
+        }
+        #clearBtn {
+            background: #c0392b;
+            color: white;
+        }
+        #clearBtn:hover {
+            background: #a8231a;
+        }
+
+        /* لوحة الخصائص */
+        .properties-panel {
+            position: absolute;
+            right: 20px;
+            top: 80px;
+            background: rgba(25,25,25,0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 16px;
+            width: 240px;
+            border: 1px solid #3f3f46;
+            box-shadow: -4px 4px 20px rgba(0,0,0,0.6);
+            z-index: 200;
+        }
+        .properties-panel h4 {
+            margin: 0 0 12px 0;
+            color: #aaa;
+            font-weight: 400;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .property-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+        .property-item .value {
+            color: var(--primary);
+            font-weight: 600;
+        }
+        .prop-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 16px;
+        }
+        .prop-actions button {
+            background: #2d2d2d;
+            border: 1px solid #444;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .prop-actions button:hover {
+            background: #3d3d3d;
+        }
+
+        /* رسالة البداية */
+        #start-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 30px 60px;
+            border-radius: 30px;
+            border: 2px solid var(--primary);
+            font-size: 1.8rem;
+            color: white;
+            box-shadow: 0 0 40px #007acc55;
+            pointer-events: none;
+            z-index: 300;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>ArchDraw Pro</h2>
+        <button class="new-project" id="newProjectBtn">+ مشروع جديد</button>
+        <div class="projects-list">
+            <h3>مشاريعي</h3>
+            <ul id="projectsList">
+                <li class="active">مشروع تجريبي</li>
+                <li>مشروع ٢</li>
+                <li>مشروع ٣</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="workspace">
+        <div class="top-toolbar">
+            <button class="btn-tool active" data-tool="wall">🧱</button>
+            <button class="btn-tool" data-tool="door">🚪</button>
+            <button class="btn-tool" data-tool="rect">🟦</button>
+            <button class="btn-tool" id="clearBtn" style="background:#c0392b">🗑️</button>
+        </div>
+
+        <div class="properties-panel">
+            <h4>خصائص العنصر</h4>
+            <div class="property-item"><span>النوع</span><span class="value" id="prop-type">---</span></div>
+            <div class="property-item"><span>الطول</span><span class="value" id="prop-length">--- م</span></div>
+            <div class="property-item"><span>اللون</span><span class="value" id="prop-color">---</span></div>
+            <div class="prop-actions">
+                <button id="editProp">تعديل</button>
+                <button id="deleteProp">حذف</button>
+            </div>
+        </div>
+
+        <canvas id="c"></canvas>
+        <div id="start-message">ابدأ بالرسم ✏️</div>
+    </div>
+
+    <script>
+        (function() {
+            const canvas = document.getElementById('c');
+            const ctx = canvas.getContext('2d');
+            const gridSize = 25; // 1 متر لكل مربع
+            let elements = [];
+            // تحميل من localStorage إن وجد
+            try {
+                const saved = localStorage.getItem('archDrawPro');
+                if (saved) elements = JSON.parse(saved);
+            } catch (e) {}
+
+            let tool = 'wall';
+            let isDrawing = false;
+            let startP = null;
+
+            function resize() {
+                canvas.width = canvas.offsetWidth;
+                canvas.height = canvas.offsetHeight;
+                draw();
+            }
+
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const p = e.touches ? e.touches[0] : e;
+                return {
+                    x: Math.round((p.clientX - rect.left) / gridSize) * gridSize,
+                    y: Math.round((p.clientY - rect.top) / gridSize) * gridSize
+                };
+            }
+
+            function getLength(x1, y1, x2, y2) {
+                return (Math.hypot(x2 - x1, y2 - y1) / gridSize).toFixed(2);
+            }
+
+            function showProperties(el) {
+                document.getElementById('prop-type').innerText = 
+                    el.t === 'wall' ? 'جدار' : (el.t === 'door' ? 'باب' : 'غرفة');
+                const len = Math.hypot(el.x2 - el.x1, el.y2 - el.y1) / gridSize;
+                document.getElementById('prop-length').innerHTML = len.toFixed(2) + ' م';
+                document.getElementById('prop-color').innerText = 
+                    el.t === 'wall' ? 'سماوي' : 'أبيض';
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // رسم الشبكة
+                ctx.save();
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1;
+                for (let i = 0; i < canvas.width; i += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+                }
+                for (let j = 0; j < canvas.height; j += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(canvas.width, j); ctx.stroke();
+                }
+                ctx.restore();
+
+                elements.forEach(el => {
+                    ctx.save();
+                    ctx.lineWidth = 4;
+                    ctx.strokeStyle = el.t === 'wall' ? '#00ffff' : '#ffffff';
+                    ctx.beginPath();
+                    if (el.t === 'door') {
+                        const r = Math.hypot(el.x2 - el.x1, el.y2 - el.y1);
+                        ctx.arc(el.x1, el.y1, r, 0, -Math.PI/2, true);
+                    } else if (el.t === 'rect') {
+                        ctx.strokeRect(el.x1, el.y1, el.x2 - el.x1, el.y2 - el.y1);
+                    } else {
+                        ctx.moveTo(el.x1, el.y1);
+                        ctx.lineTo(el.x2, el.y2);
+                    }
+                    ctx.stroke();
+
+                    if (el.t !== 'door') {
+                        const mx = (el.x1 + el.x2) / 2;
+                        const my = (el.y1 + el.y2) / 2;
+                        const d = getLength(el.x1, el.y1, el.x2, el.y2);
+                        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                        ctx.fillRect(mx - 22, my - 12, 50, 20);
+                        ctx.fillStyle = '#ffdd44';
+                        ctx.font = 'bold 12px Arial';
+                        ctx.fillText(d + 'm', mx - 18, my - 2);
+                    }
+                    ctx.restore();
+                });
+            }
+
+            // أحداث الرسم
+            canvas.addEventListener('mousedown', (e) => {
+                isDrawing = true;
+                startP = getPos(e);
+                document.getElementById('start-message').style.display = 'none';
+            });
+            canvas.addEventListener('mousemove', (e) => {
+                if (!isDrawing) return;
+                const curr = getPos(e);
+                draw();
+                ctx.save();
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = '#aaa';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(startP.x, startP.y);
+                ctx.lineTo(curr.x, curr.y);
+                ctx.stroke();
+                const d = getLength(startP.x, startP.y, curr.x, curr.y);
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(curr.x + 10, curr.y - 25, 50, 20);
+                ctx.fillStyle = 'white';
+                ctx.fillText(d + 'm', curr.x + 15, curr.y - 10);
+                ctx.restore();
+            });
+            window.addEventListener('mouseup', (e) => {
+                if (!isDrawing) return;
+                isDrawing = false;
+                const endP = getPos(e);
+                if (Math.hypot(endP.x - startP.x, endP.y - startP.y) > 5) {
+                    elements.push({
+                        t: tool,
+                        x1: startP.x,
+                        y1: startP.y,
+                        x2: endP.x,
+                        y2: endP.y
+                    });
+                    localStorage.setItem('archDrawPro', JSON.stringify(elements));
+                }
+                draw();
+            });
+
+            // أحداث اللمس
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                isDrawing = true;
+                startP = getPos(e);
+                document.getElementById('start-message').style.display = 'none';
+            }, { passive: false });
+            canvas.addEventListener('touchmove', (e) => {
+                if (!isDrawing) return;
+                e.preventDefault();
+                const curr = getPos(e);
+                draw();
+                ctx.save();
+                ctx.setLineDash([5,5]);
+                ctx.strokeStyle = '#aaa';
+                ctx.beginPath();
+                ctx.moveTo(startP.x, startP.y);
+                ctx.lineTo(curr.x, curr.y);
+                ctx.stroke();
+                const d = getLength(startP.x, startP.y, curr.x, curr.y);
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(curr.x + 10, curr.y - 25, 50, 20);
+                ctx.fillStyle = 'white';
+                ctx.fillText(d + 'm', curr.x + 15, curr.y - 10);
+                ctx.restore();
+            }, { passive: false });
+            window.addEventListener('touchend', (e) => {
+                if (!isDrawing) return;
+                e.preventDefault();
+                isDrawing = false;
+                const endP = getPos(e);
+                if (Math.hypot(endP.x - startP.x, endP.y - startP.y) > 5) {
+                    elements.push({
+                        t: tool,
+                        x1: startP.x,
+                        y1: startP.y,
+                        x2: endP.x,
+                        y2: endP.y
+                    });
+                    localStorage.setItem('archDrawPro', JSON.stringify(elements));
+                }
+                draw();
+            });
+
+            // اختيار أداة من شريط الأدوات
+            document.querySelectorAll('.btn-tool[data-tool]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    tool = btn.dataset.tool;
+                });
+            });
+
+            // مسح الكل
+            document.getElementById('clearBtn').addEventListener('click', () => {
+                if (confirm('مسح المخطط بالكامل؟')) {
+                    elements = [];
+                    localStorage.removeItem('archDrawPro');
+                    draw();
+                    document.getElementById('start-message').style.display = 'block';
+                }
+            });
+
+            // مشروع جديد
+            document.getElementById('newProjectBtn').addEventListener('click', () => {
+                if (confirm('بدء مشروع جديد؟')) {
+                    elements = [];
+                    localStorage.removeItem('archDrawPro');
+                    draw();
+                    document.getElementById('start-message').style.display = 'block';
+                }
+            });
+
+            // اختيار مشروع من القائمة (مجرد مثال)
+            document.querySelectorAll('#projectsList li').forEach(li => {
+                li.addEventListener('click', function() {
+                    document.querySelectorAll('#projectsList li').forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+                    // هنا يمكن تحميل بيانات مشروع مختلف
+                });
+            });
+
+            // النقر على عنصر لتحديده
+            canvas.addEventListener('click', (e) => {
+                const pos = getPos(e);
+                for (let el of elements) {
+                    const dist = Math.abs((el.y2 - el.y1) * pos.x - (el.x2 - el.x1) * pos.y + el.x2 * el.y1 - el.y2 * el.x1) / Math.hypot(el.x2 - el.x1, el.y2 - el.y1);
+                    if (dist < 15) {
+                        showProperties(el);
+                        break;
+                    }
+                }
+            });
+
+            window.addEventListener('resize', resize);
+            resize();
+
+            if (elements.length > 0) document.getElementById('start-message').style.display = 'none';
+        })();
+    </script>
+</body>
+</html>
